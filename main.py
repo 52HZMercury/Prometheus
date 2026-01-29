@@ -3,9 +3,9 @@ from monitor import ScreenShotMonitor
 
 
 def main():
-    # ⚠️ 配置区
-    DEEPSEEK_API_KEY = "sk-efe4421346064e71a766d619352df752"
-    QQ_EMAIL_AUTH_CODE = "lphtfzmzrjcmfbhe"
+    # 配置区
+    DEEPSEEK_API_KEY = ""  # 配置deepseek的api key
+    QQ_EMAIL_AUTH_CODE = ""  # 配置QQ邮箱的授权码
 
     app = ScreenShotMonitor(
         ds_api_key=DEEPSEEK_API_KEY,
