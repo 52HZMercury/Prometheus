@@ -6,7 +6,7 @@ ACTIVE_MODEL = "deepseek"
 
 # DeepSeek 配置
 DEEPSEEK_CONFIG = {
-    "api_key": "sk-efe4421346064e71a766d619352df752",
+    "api_key": "Your-Key",
     "base_url": "https://api.deepseek.com/chat/completions",
     "model": "deepseek-chat"
     # "model": "deepseek-reasoner" # 思考模式
@@ -14,7 +14,7 @@ DEEPSEEK_CONFIG = {
 
 # Gemini 配置
 GEMINI_CONFIG = {
-    "api_key": "AIzaSyDXj8UpCqEW_IXwvI01jDG7s0zztnlYxgw",
+    "api_key": "Your-Key",
     "model": "gemini-3.1-pro-preview"
     # "model": "gemini-3-flash-preview"
 }
@@ -23,7 +23,7 @@ GEMINI_CONFIG = {
 EMAIL_CONFIG = {
     "smtp_server": "smtp.qq.com",
     "sender": "2108796780@qq.com",
-    "auth_code": "lphtfzmzrjcmfbhe",
+    "auth_code": "Your-Key",
     "receiver": [
         "chenning_william@163.com",
         "1438615474@qq.com",
