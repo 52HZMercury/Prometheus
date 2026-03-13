@@ -29,7 +29,8 @@ class ScreenShotMonitor:
         print(answer)
 
         email_content = f"时间: {now_str}\n\nAI 分析建议如下:\n\n{answer}"
-        self.email_bot.send_email(email_content)
+        # --- 修改点：传入 image_path 参数 ---
+        self.email_bot.send_email(email_content, image_path=path)
 
     def _on_press(self, key):
         if key == keyboard.Key.delete:
