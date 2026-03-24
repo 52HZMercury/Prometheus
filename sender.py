@@ -1,17 +1,25 @@
 import smtplib
 import os
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from email.header import Header
 from config import EMAIL_CONFIG
 
+# 配置日志：同时输出到文件，方便后台调试
+logging.basicConfig(
+    filename='prometheus.log',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    encoding='utf-8'
+)
 
 class EmailSender:
     def __init__(self):
         self.conf = EMAIL_CONFIG
 
-    def send_email(self, content, image_path=None, subject="AI 屏幕分析报告"):
+    def send_email(self, content, image_path=None, subject="来自Prometheus的报告"):
         receivers = self.conf['receiver']
 
         # 确保 receivers 是列表格式，兼容单人或多人
@@ -34,7 +42,7 @@ class EmailSender:
                     img_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
                     message.attach(img_attachment)
             except Exception as e:
-                print(f"[!] 读取图片附件失败: {e}")
+                logging.info(f"[!] 读取图片附件失败: {e}")
 
         try:
             server = smtplib.SMTP_SSL(self.conf['smtp_server'], 465)
@@ -42,6 +50,6 @@ class EmailSender:
             # 这里传入 receivers 列表，SMTP 会循环发送给每一个人
             server.sendmail(self.conf['sender'], receivers, message.as_string())
             server.quit()
-            print(f"[✓] 邮件已成功发送至: {', '.join(receivers)}")
+            logging.info(f"[✓] 邮件已成功发送至: {', '.join(receivers)}")
         except Exception as e:
-            print(f"[X] 邮件发送失败: {e}")
+            logging.info(f"[X] 邮件发送失败: {e}")

@@ -4,6 +4,9 @@
 ACTIVE_MODEL = "deepseek"
 # ACTIVE_MODEL = "gemini"
 
+# 全局超时设置
+GLOBAL_TIMEOUT = 150
+
 # DeepSeek 配置
 DEEPSEEK_CONFIG = {
     "api_key": "Your-Key",
@@ -23,11 +26,11 @@ GEMINI_CONFIG = {
 EMAIL_CONFIG = {
     "smtp_server": "smtp.qq.com",
     "sender": "2108796780@qq.com",
-    "auth_code": "Your-Key",
+    "auth_code": "lphtfzmzrjcmfbhe",
     "receiver": [
         "chenning_william@163.com",
-        "1438615474@qq.com",
-        "2567159157@qq.com",
-        "321907434@qq.com"
+        # "1438615474@qq.com",
+        # "2567159157@qq.com",
+        # "321907434@qq.com"
     ]
 }
