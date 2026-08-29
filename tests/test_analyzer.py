@@ -49,9 +49,7 @@ class DeepSeekClientTests(AnalyzerTestCase):
 
     def test_base64_request_contains_data_url_and_original_detail(self):
         client = self.make_client("base64")
-        response = FakeResponse(
-            {"choices": [{"message": {"content": "分析完成"}}]}
-        )
+        response = FakeResponse({"choices": [{"message": {"content": "分析完成"}}]})
         with patch("analyzer.requests.post", return_value=response) as post:
             result = client.ask_image(self.image_path, "分析图片", "系统提示")
 
@@ -88,17 +86,13 @@ class DeepSeekClientTests(AnalyzerTestCase):
         self.assertEqual(
             upload_call.kwargs["data"]["expires_after[anchor]"], "created_at"
         )
-        self.assertEqual(
-            upload_call.kwargs["data"]["expires_after[seconds]"], "10800"
-        )
+        self.assertEqual(upload_call.kwargs["data"]["expires_after[seconds]"], "10800")
         file_tuple = upload_call.kwargs["files"]["file"]
         self.assertEqual(file_tuple[0], "screen.png")
         self.assertEqual(file_tuple[2], "image/png")
 
         chat_content = post.call_args_list[1].kwargs["json"]["messages"][1]["content"]
-        self.assertEqual(
-            chat_content[1], {"type": "file", "file_id": "file-api-test"}
-        )
+        self.assertEqual(chat_content[1], {"type": "file", "file_id": "file-api-test"})
 
     def test_auto_mode_uses_documented_32_mib_boundary(self):
         client = self.make_client("auto")
@@ -166,13 +160,160 @@ class DeepSeekClientTests(AnalyzerTestCase):
                 client.ask_image(self.image_path, "分析图片", "系统提示")
 
 
+class KimiClientTests(AnalyzerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.image_path = os.path.join(self.temp_dir.name, "screen.png")
+        Image.new("RGB", (16, 12), "white").save(self.image_path, format="PNG")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        super().tearDown()
+
+    def make_client(self, mode="auto"):
+        with patch.object(analyzer, "IMAGE_INPUT_MODE", mode):
+            return analyzer.KimiClient()
+
+    def test_base64_request_uses_kimi_image_url_format(self):
+        client = self.make_client("base64")
+        response = FakeResponse(
+            {"choices": [{"message": {"content": "Kimi 分析完成"}}]}
+        )
+        with patch("analyzer.requests.post", return_value=response) as post:
+            result = client.ask_image(self.image_path, "分析图片", "系统提示")
+
+        self.assertEqual(result, "Kimi 分析完成")
+        content = post.call_args.kwargs["json"]["messages"][1]["content"]
+        self.assertEqual(content[1]["type"], "image_url")
+        self.assertEqual(set(content[1]["image_url"]), {"url"})
+        self.assertTrue(
+            content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+        )
+
+    def test_chat_http_error_includes_kimi_api_message(self):
+        client = self.make_client("base64")
+        response = FakeResponse(
+            {
+                "error": {
+                    "message": "Not found the model or Permission denied",
+                }
+            },
+            error=requests.HTTPError("404 Client Error"),
+        )
+        with patch("analyzer.requests.post", return_value=response):
+            with self.assertRaisesRegex(
+                requests.HTTPError, "Not found the model or Permission denied"
+            ):
+                client.ask_image(self.image_path, "分析图片", "系统提示")
+
+    def test_uploaded_image_is_referenced_and_deleted(self):
+        client = self.make_client("files_api")
+        upload_response = FakeResponse({"id": "file-kimi-test"})
+        chat_response = FakeResponse(
+            {"choices": [{"message": {"content": "文件分析完成"}}]}
+        )
+        delete_response = FakeResponse(
+            {"id": "file-kimi-test", "object": "file", "deleted": True}
+        )
+        with (
+            patch(
+                "analyzer.requests.post",
+                side_effect=[upload_response, chat_response],
+            ) as post,
+            patch("analyzer.requests.delete", return_value=delete_response) as delete,
+        ):
+            result = client.ask_image(self.image_path, "分析图片", "系统提示")
+
+        self.assertEqual(result, "文件分析完成")
+        upload_call = post.call_args_list[0]
+        self.assertEqual(upload_call.args[0], analyzer.KIMI_CONFIG["files_url"])
+        self.assertEqual(upload_call.kwargs["data"], {"purpose": "image"})
+        chat_content = post.call_args_list[1].kwargs["json"]["messages"][1]["content"]
+        self.assertEqual(
+            chat_content[1],
+            {
+                "type": "image_url",
+                "image_url": {"url": "ms://file-kimi-test"},
+            },
+        )
+        delete.assert_called_once_with(
+            f"{analyzer.KIMI_CONFIG['files_url']}/file-kimi-test",
+            headers=client._auth_headers,
+            timeout=analyzer.GLOBAL_TIMEOUT,
+        )
+
+    def test_uploaded_image_is_deleted_when_chat_fails(self):
+        client = self.make_client("files_api")
+        chat_error = requests.HTTPError("chat failed")
+        with (
+            patch(
+                "analyzer.requests.post",
+                side_effect=[
+                    FakeResponse({"id": "file-cleanup-test"}),
+                    FakeResponse(error=chat_error),
+                ],
+            ),
+            patch(
+                "analyzer.requests.delete",
+                return_value=FakeResponse({"deleted": True}),
+            ) as delete,
+        ):
+            with self.assertRaises(requests.HTTPError):
+                client.ask_image(self.image_path, "分析图片", "系统提示")
+
+        delete.assert_called_once()
+
+    def test_delete_failure_does_not_hide_completed_analysis(self):
+        client = self.make_client("files_api")
+        delete_error = requests.HTTPError("delete failed")
+        with (
+            patch(
+                "analyzer.requests.post",
+                side_effect=[
+                    FakeResponse({"id": "file-delete-error"}),
+                    FakeResponse({"choices": [{"message": {"content": "分析完成"}}]}),
+                ],
+            ),
+            patch(
+                "analyzer.requests.delete",
+                return_value=FakeResponse(error=delete_error),
+            ),
+            patch("analyzer.logging.error") as log_error,
+        ):
+            result = client.ask_image(self.image_path, "分析图片", "系统提示")
+
+        self.assertEqual(result, "分析完成")
+        log_error.assert_called_once()
+
+    def test_kimi_files_api_limit_is_100_mib(self):
+        client = self.make_client()
+        with patch(
+            "analyzer.os.path.getsize",
+            return_value=analyzer.KIMI_FILES_API_IMAGE_LIMIT + 1,
+        ):
+            with self.assertRaisesRegex(ValueError, "100 MiB"):
+                client._inspect_image(self.image_path)
+
+
+class ClientFactoryTests(AnalyzerTestCase):
+    def test_selects_kimi(self):
+        with patch.object(analyzer, "AI_PROVIDER", "kimi"):
+            self.assertIsInstance(analyzer.create_llm_client(), analyzer.KimiClient)
+
+    def test_rejects_unknown_provider(self):
+        with patch.object(analyzer, "AI_PROVIDER", "unknown"):
+            with self.assertRaisesRegex(ValueError, "AI_PROVIDER"):
+                analyzer.create_llm_client()
+
+
 class MultiModelAnalyzerTests(AnalyzerTestCase):
     def test_ocr_disabled_does_not_import_easyocr_and_sends_image(self):
         client = Mock()
         client.ask_image.return_value = "图片答案"
         with (
             patch.object(analyzer, "OCR_ENABLED", False),
-            patch("analyzer.DeepSeekClient", return_value=client),
+            patch("analyzer.create_llm_client", return_value=client),
             patch.dict(sys.modules, {"easyocr": None}),
         ):
             image_analyzer = analyzer.MultiModelAnalyzer()
@@ -186,15 +327,13 @@ class MultiModelAnalyzerTests(AnalyzerTestCase):
     def test_ocr_enabled_lazily_initializes_reader_and_sends_text(self):
         reader = Mock()
         reader.readtext.return_value = ["第一行", "第二行"]
-        easyocr_module = types.SimpleNamespace(
-            Reader=Mock(return_value=reader)
-        )
+        easyocr_module = types.SimpleNamespace(Reader=Mock(return_value=reader))
         client = Mock()
         client.ask.return_value = "文本答案"
 
         with (
             patch.object(analyzer, "OCR_ENABLED", True),
-            patch("analyzer.DeepSeekClient", return_value=client),
+            patch("analyzer.create_llm_client", return_value=client),
             patch.dict(sys.modules, {"easyocr": easyocr_module}),
         ):
             image_analyzer = analyzer.MultiModelAnalyzer()
@@ -212,7 +351,7 @@ class MultiModelAnalyzerTests(AnalyzerTestCase):
         client.ask_image.side_effect = requests.HTTPError("API unavailable")
         with (
             patch.object(analyzer, "OCR_ENABLED", False),
-            patch("analyzer.DeepSeekClient", return_value=client),
+            patch("analyzer.create_llm_client", return_value=client),
             patch("analyzer.logging.error"),
         ):
             image_analyzer = analyzer.MultiModelAnalyzer()

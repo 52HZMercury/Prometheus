@@ -5,14 +5,14 @@ import os
 import logging
 from analyzer import MultiModelAnalyzer
 from sender import EmailSender
-from config import DEEPSEEK_CONFIG, OCR_ENABLED
+from config import OCR_ENABLED
 
 # 配置日志：同时输出到文件，方便后台调试
 logging.basicConfig(
-    filename='prometheus.log',
+    filename="prometheus.log",
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    encoding='utf-8'
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    encoding="utf-8",
 )
 
 
@@ -23,8 +23,9 @@ class ScreenShotMonitor:
         self.email_bot = EmailSender()
         self._ensure_dir()
         logging.info(
-            "Prometheus 实例已初始化，当前模型: %s，OCR: %s",
-            DEEPSEEK_CONFIG["model"],
+            "Prometheus 实例已初始化，当前提供商: %s，模型: %s，OCR: %s",
+            self.analyzer.client.provider_name,
+            self.analyzer.client.conf["model"],
             "开启" if OCR_ENABLED else "关闭",
         )
 
@@ -34,9 +35,7 @@ class ScreenShotMonitor:
 
     def capture_analyze_and_send(self):
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H%M%S")
-        path = os.path.abspath(
-            os.path.join(self.folder_name, f"shot_{now_str}.png")
-        )
+        path = os.path.abspath(os.path.join(self.folder_name, f"shot_{now_str}.png"))
 
         try:
             # 截图
@@ -45,7 +44,10 @@ class ScreenShotMonitor:
 
             # AI 分析
             answer = self.analyzer.analyze_image(path)
-            logging.info("AI 分析完成，使用的模型: %s", DEEPSEEK_CONFIG["model"])
+            logging.info(
+                "AI 分析完成，使用的模型: %s",
+                self.analyzer.client.conf["model"],
+            )
 
             # 发送邮件
             email_content = f"时间: {now_str}\n\nAI 分析建议如下:\n\n{answer}"

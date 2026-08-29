@@ -1,15 +1,18 @@
 import base64
 import logging
 import os
+from urllib.parse import quote
 
 import requests
 from PIL import Image, UnidentifiedImageError
 
 from config import (
+    AI_PROVIDER,
     DEEPSEEK_CONFIG,
     FILE_EXPIRES_AFTER_SECONDS,
     GLOBAL_TIMEOUT,
     IMAGE_INPUT_MODE,
+    KIMI_CONFIG,
     OCR_ENABLED,
 )
 
@@ -25,6 +28,7 @@ logging.basicConfig(
 MIB = 1024 * 1024
 BASE64_IMAGE_LIMIT = 32 * MIB
 FILES_API_IMAGE_LIMIT = 64 * MIB
+KIMI_FILES_API_IMAGE_LIMIT = 100 * MIB
 MAX_IMAGE_EDGE = 8192
 SUPPORTED_IMAGE_FORMATS = {
     "JPEG": "image/jpeg",
@@ -74,53 +78,31 @@ class LLMClient:
         raise NotImplementedError
 
 
-class DeepSeekClient(LLMClient):
-    def __init__(self):
-        self.conf = DEEPSEEK_CONFIG
+class ImageLLMClient(LLMClient):
+    provider_name = "AI"
+    files_api_image_limit = FILES_API_IMAGE_LIMIT
+
+    def _initialize_image_mode(self):
         self.image_input_mode = IMAGE_INPUT_MODE.lower()
         if self.image_input_mode not in SUPPORTED_IMAGE_MODES:
             choices = ", ".join(sorted(SUPPORTED_IMAGE_MODES))
             raise ValueError(f"IMAGE_INPUT_MODE 必须是以下值之一: {choices}")
-        if not 3600 <= FILE_EXPIRES_AFTER_SECONDS <= 2592000:
-            raise ValueError(
-                "FILE_EXPIRES_AFTER_SECONDS 必须在 3600 到 2592000 秒之间"
-            )
 
     @property
     def _auth_headers(self):
         return {"Authorization": f"Bearer {self.conf['api_key']}"}
-
-    def _chat(self, user_content, system_prompt):
-        payload = {
-            "model": self.conf["model"],
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-        }
-        headers = {**self._auth_headers, "Content-Type": "application/json"}
-        response = requests.post(
-            self.conf["chat_url"],
-            headers=headers,
-            json=payload,
-            timeout=GLOBAL_TIMEOUT,
-        )
-        response.raise_for_status()
-        try:
-            return response.json()["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise RuntimeError("DeepSeek 返回了无法解析的对话响应") from exc
-
-    def ask(self, prompt, system_prompt):
-        return self._chat(prompt, system_prompt)
 
     def _inspect_image(self, image_path):
         if not os.path.isfile(image_path):
             raise ValueError(f"图片文件不存在: {image_path}")
 
         file_size = os.path.getsize(image_path)
-        if file_size > FILES_API_IMAGE_LIMIT:
-            raise ValueError("图片超过 Files API 允许的 64 MiB 上限")
+        if file_size > self.files_api_image_limit:
+            limit_mib = self.files_api_image_limit // MIB
+            raise ValueError(
+                f"图片超过 {self.provider_name} Files API 允许的 "
+                f"{limit_mib} MiB 上限"
+            )
 
         try:
             with Image.open(image_path) as image:
@@ -146,13 +128,9 @@ class DeepSeekClient(LLMClient):
     def _resolve_image_mode(self, file_size):
         if self.image_input_mode == "auto":
             return "base64" if file_size <= BASE64_IMAGE_LIMIT else "files_api"
-        if (
-            self.image_input_mode == "base64"
-            and file_size > BASE64_IMAGE_LIMIT
-        ):
+        if self.image_input_mode == "base64" and file_size > BASE64_IMAGE_LIMIT:
             raise ValueError(
-                "Base64 模式下单张图片不能超过 32 MiB，"
-                "请改用 files_api 或 auto"
+                "Base64 模式下单张图片不能超过 32 MiB，" "请改用 files_api 或 auto"
             )
         return self.image_input_mode
 
@@ -163,9 +141,47 @@ class DeepSeekClient(LLMClient):
             "type": "image_url",
             "image_url": {
                 "url": f"data:{mime_type};base64,{encoded}",
-                "detail": "original",
             },
         }
+
+
+class DeepSeekClient(ImageLLMClient):
+    provider_name = "DeepSeek"
+
+    def __init__(self):
+        self.conf = DEEPSEEK_CONFIG
+        self._initialize_image_mode()
+        if not 3600 <= FILE_EXPIRES_AFTER_SECONDS <= 2592000:
+            raise ValueError("FILE_EXPIRES_AFTER_SECONDS 必须在 3600 到 2592000 秒之间")
+
+    def _chat(self, user_content, system_prompt):
+        payload = {
+            "model": self.conf["model"],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+        }
+        headers = {**self._auth_headers, "Content-Type": "application/json"}
+        response = requests.post(
+            self.conf["chat_url"],
+            headers=headers,
+            json=payload,
+            timeout=GLOBAL_TIMEOUT,
+        )
+        response.raise_for_status()
+        try:
+            return response.json()["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RuntimeError("DeepSeek 返回了无法解析的对话响应") from exc
+
+    def ask(self, prompt, system_prompt):
+        return self._chat(prompt, system_prompt)
+
+    def _build_base64_block(self, image_path, mime_type):
+        image_block = super()._build_base64_block(image_path, mime_type)
+        image_block["image_url"]["detail"] = "original"
+        return image_block
 
     def _upload_image(self, image_path, mime_type):
         filename = os.path.basename(image_path)
@@ -198,14 +214,10 @@ class DeepSeekClient(LLMClient):
     def ask_image(self, image_path, prompt, system_prompt):
         image_info = self._inspect_image(image_path)
         image_mode = self._resolve_image_mode(image_info["size"])
-        logging.info(
-            "使用 %s 模式向 DeepSeek 发送图片 (%s)", image_mode, image_path
-        )
+        logging.info("使用 %s 模式向 DeepSeek 发送图片 (%s)", image_mode, image_path)
 
         if image_mode == "base64":
-            image_block = self._build_base64_block(
-                image_path, image_info["mime_type"]
-            )
+            image_block = self._build_base64_block(image_path, image_info["mime_type"])
         else:
             file_id = self._upload_image(image_path, image_info["mime_type"])
             image_block = {"type": "file", "file_id": file_id}
@@ -217,6 +229,133 @@ class DeepSeekClient(LLMClient):
         return self._chat(user_content, system_prompt)
 
 
+class KimiClient(ImageLLMClient):
+    provider_name = "Kimi"
+    files_api_image_limit = KIMI_FILES_API_IMAGE_LIMIT
+
+    def __init__(self):
+        self.conf = KIMI_CONFIG
+        self._initialize_image_mode()
+
+    def _chat(self, user_content, system_prompt):
+        payload = {
+            "model": self.conf["model"],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+        }
+        headers = {**self._auth_headers, "Content-Type": "application/json"}
+        response = requests.post(
+            self.conf["chat_url"],
+            headers=headers,
+            json=payload,
+            timeout=GLOBAL_TIMEOUT,
+        )
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            try:
+                api_message = response.json()["error"]["message"]
+            except (KeyError, TypeError, ValueError):
+                raise exc
+            raise requests.HTTPError(
+                f"{exc}; Kimi API: {api_message}",
+                response=exc.response,
+                request=exc.request,
+            ) from exc
+        try:
+            return response.json()["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RuntimeError("Kimi 返回了无法解析的对话响应") from exc
+
+    def ask(self, prompt, system_prompt):
+        return self._chat(prompt, system_prompt)
+
+    def _upload_image(self, image_path, mime_type):
+        filename = os.path.basename(image_path)
+        with open(image_path, "rb") as image_file:
+            files = {"file": (filename, image_file, mime_type)}
+            response = requests.post(
+                self.conf["files_url"],
+                headers=self._auth_headers,
+                data={"purpose": "image"},
+                files=files,
+                timeout=GLOBAL_TIMEOUT,
+            )
+        response.raise_for_status()
+        try:
+            file_id = response.json()["id"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Kimi Files API 返回了无法解析的响应") from exc
+        if not isinstance(file_id, str) or not file_id:
+            raise RuntimeError("Kimi Files API 未返回有效的 file_id")
+        return file_id
+
+    def _delete_file(self, file_id):
+        safe_file_id = quote(file_id, safe="")
+        response = requests.delete(
+            f"{self.conf['files_url'].rstrip('/')}/{safe_file_id}",
+            headers=self._auth_headers,
+            timeout=GLOBAL_TIMEOUT,
+        )
+        response.raise_for_status()
+        try:
+            deleted = response.json()["deleted"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Kimi Files API 返回了无法解析的删除响应") from exc
+        if deleted is not True:
+            raise RuntimeError(f"Kimi Files API 未能删除文件: {file_id}")
+
+    def ask_image(self, image_path, prompt, system_prompt):
+        image_info = self._inspect_image(image_path)
+        image_mode = self._resolve_image_mode(image_info["size"])
+        logging.info("使用 %s 模式向 Kimi 发送图片 (%s)", image_mode, image_path)
+
+        file_id = None
+        if image_mode == "base64":
+            image_block = self._build_base64_block(image_path, image_info["mime_type"])
+        else:
+            file_id = self._upload_image(image_path, image_info["mime_type"])
+            image_block = {
+                "type": "image_url",
+                "image_url": {"url": f"ms://{file_id}"},
+            }
+
+        user_content = [
+            {"type": "text", "text": prompt},
+            image_block,
+        ]
+        try:
+            return self._chat(user_content, system_prompt)
+        finally:
+            if file_id is not None:
+                try:
+                    self._delete_file(file_id)
+                    logging.info("已删除 Kimi 临时文件: %s", file_id)
+                except Exception as exc:
+                    logging.error(
+                        "删除 Kimi 临时文件失败 (%s): %s",
+                        file_id,
+                        exc,
+                        exc_info=True,
+                    )
+
+
+def create_llm_client():
+    provider = AI_PROVIDER.strip().lower()
+    clients = {
+        "deepseek": DeepSeekClient,
+        "kimi": KimiClient,
+    }
+    try:
+        client_class = clients[provider]
+    except KeyError as exc:
+        choices = ", ".join(sorted(clients))
+        raise ValueError(f"AI_PROVIDER 必须是以下值之一: {choices}") from exc
+    return client_class()
+
+
 class MultiModelAnalyzer:
     def __init__(self):
         self.reader = None
@@ -225,7 +364,7 @@ class MultiModelAnalyzer:
 
             logging.info("OCR 已启用，正在初始化 EasyOCR")
             self.reader = easyocr.Reader(["ch_sim", "en"])
-        self.client = DeepSeekClient()
+        self.client = create_llm_client()
 
     def _extract_text(self, image_path):
         if self.reader is None:
@@ -251,9 +390,7 @@ class MultiModelAnalyzer:
                 "请直接阅读并分析这张截图，先识别题型（算法题/选择题/人才测评题/其他），"
                 "再根据截图中的全部文字、代码、选项和图形信息给出最优作答。"
             )
-            return self.client.ask_image(
-                image_path, user_prompt, SYSTEM_PROMPT
-            )
+            return self.client.ask_image(image_path, user_prompt, SYSTEM_PROMPT)
         except Exception as exc:
             logging.error("AI 图片分析失败: %s", exc, exc_info=True)
             return f"AI 思考时出错了: {exc}"

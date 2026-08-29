@@ -1,5 +1,11 @@
 # config.py
 
+import os
+
+
+# AI 提供商："deepseek" 或 "kimi"
+AI_PROVIDER = "deepseek"
+
 # OCR 开关：False 时直接把截图发送给多模态模型；True 时先在本地提取文字
 OCR_ENABLED = False
 
@@ -18,7 +24,16 @@ DEEPSEEK_CONFIG = {
     "api_key": "$api_key$",
     "chat_url": "https://api.deepseek.com/chat/completions",
     "files_url": "https://api.deepseek.com/files",
-    "model": "deepseek-v4-flash-vision-exp"
+    "model": "deepseek-v4-flash-vision-exp",
+}
+
+# Kimi 配置
+# 推荐通过环境变量 MOONSHOT_API_KEY 提供密钥，也可以直接替换占位符
+KIMI_CONFIG = {
+    "api_key": "$api_key$",
+    "chat_url": "https://api.moonshot.cn/v1/chat/completions",
+    "files_url": "https://api.moonshot.cn/v1/files",
+    "model": "kimi-k2.6",
 }
 
 # 邮箱配置
@@ -33,5 +48,5 @@ EMAIL_CONFIG = {
         # "2567159157@qq.com", #豪
         # "jingying.zhao110@outlook.com",
         # "2197359276@qq.com" #王梦华
-    ]
+    ],
 }
