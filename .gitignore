@@ -4,3 +4,4 @@ __pycache__
 # 运行时生成的日志和截图
 /prometheus.log
 /screenshots/
+/.vscode
