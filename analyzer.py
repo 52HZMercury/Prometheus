@@ -82,7 +82,9 @@ class DeepSeekClient(LLMClient):
             choices = ", ".join(sorted(SUPPORTED_IMAGE_MODES))
             raise ValueError(f"IMAGE_INPUT_MODE 必须是以下值之一: {choices}")
         if not 3600 <= FILE_EXPIRES_AFTER_SECONDS <= 2592000:
-            raise ValueError("FILE_EXPIRES_AFTER_SECONDS 必须在 3600 到 2592000 秒之间")
+            raise ValueError(
+                "FILE_EXPIRES_AFTER_SECONDS 必须在 3600 到 2592000 秒之间"
+            )
 
     @property
     def _auth_headers(self):
@@ -130,7 +132,9 @@ class DeepSeekClient(LLMClient):
 
         if image_format not in SUPPORTED_IMAGE_FORMATS:
             supported = ", ".join(SUPPORTED_IMAGE_FORMATS)
-            raise ValueError(f"不支持的图片格式 {image_format or '未知'}，仅支持: {supported}")
+            raise ValueError(
+                f"不支持的图片格式 {image_format or '未知'}，仅支持: {supported}"
+            )
         if max(width, height) > MAX_IMAGE_EDGE:
             raise ValueError(f"图片单边尺寸不能超过 {MAX_IMAGE_EDGE} 像素")
 
@@ -142,8 +146,14 @@ class DeepSeekClient(LLMClient):
     def _resolve_image_mode(self, file_size):
         if self.image_input_mode == "auto":
             return "base64" if file_size <= BASE64_IMAGE_LIMIT else "files_api"
-        if self.image_input_mode == "base64" and file_size > BASE64_IMAGE_LIMIT:
-            raise ValueError("Base64 模式下单张图片不能超过 32 MiB，请改用 files_api 或 auto")
+        if (
+            self.image_input_mode == "base64"
+            and file_size > BASE64_IMAGE_LIMIT
+        ):
+            raise ValueError(
+                "Base64 模式下单张图片不能超过 32 MiB，"
+                "请改用 files_api 或 auto"
+            )
         return self.image_input_mode
 
     def _build_base64_block(self, image_path, mime_type):
@@ -241,7 +251,9 @@ class MultiModelAnalyzer:
                 "请直接阅读并分析这张截图，先识别题型（算法题/选择题/人才测评题/其他），"
                 "再根据截图中的全部文字、代码、选项和图形信息给出最优作答。"
             )
-            return self.client.ask_image(image_path, user_prompt, SYSTEM_PROMPT)
+            return self.client.ask_image(
+                image_path, user_prompt, SYSTEM_PROMPT
+            )
         except Exception as exc:
             logging.error("AI 图片分析失败: %s", exc, exc_info=True)
             return f"AI 思考时出错了: {exc}"

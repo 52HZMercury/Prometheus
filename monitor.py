@@ -15,6 +15,7 @@ logging.basicConfig(
     encoding='utf-8'
 )
 
+
 class ScreenShotMonitor:
     def __init__(self, folder_name="screenshots"):
         self.folder_name = folder_name
@@ -33,7 +34,9 @@ class ScreenShotMonitor:
 
     def capture_analyze_and_send(self):
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H%M%S")
-        path = os.path.abspath(os.path.join(self.folder_name, f"shot_{now_str}.png"))
+        path = os.path.abspath(
+            os.path.join(self.folder_name, f"shot_{now_str}.png")
+        )
 
         try:
             # 截图
