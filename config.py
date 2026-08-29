@@ -1,25 +1,24 @@
 # config.py
 
-# 核心设置：选择当前使用的 AI 厂商 ("deepseek" 或 "gemini")
-ACTIVE_MODEL = "deepseek"
-# ACTIVE_MODEL = "gemini"
+# OCR 开关：False 时直接把截图发送给多模态模型；True 时先在本地提取文字
+OCR_ENABLED = False
+
+# 图片输入模式："base64"、"files_api" 或 "auto"
+# auto 会对不超过 32 MiB 的图片使用 Base64，更大的图片使用 Files API
+IMAGE_INPUT_MODE = "auto"
+
+# Files API 上传文件的有效期：3 小时
+FILE_EXPIRES_AFTER_SECONDS = 10800
 
 # 全局超时设置
 GLOBAL_TIMEOUT = 150
 
 # DeepSeek 配置
 DEEPSEEK_CONFIG = {
-    "api_key": "Your-Key",
-    "base_url": "https://api.deepseek.com/chat/completions",
-    "model": "deepseek-chat"
-    # "model": "deepseek-reasoner" # 思考模式
-}
-
-# Gemini 配置
-GEMINI_CONFIG = {
-    "api_key": "Your-Key",
-    "model": "gemini-3.1-pro-preview"
-    # "model": "gemini-3-flash-preview"
+    "api_key": "$api_key$",
+    "chat_url": "https://api.deepseek.com/chat/completions",
+    "files_url": "https://api.deepseek.com/files",
+    "model": "deepseek-v4-flash-vision-exp"
 }
 
 # 邮箱配置
@@ -28,9 +27,11 @@ EMAIL_CONFIG = {
     "sender": "2108796780@qq.com",
     "auth_code": "lphtfzmzrjcmfbhe",
     "receiver": [
-        "chenning_william@163.com",
-        # "1438615474@qq.com",
-        # "2567159157@qq.com",
         # "321907434@qq.com"
+        "chenning_william@163.com"
+        # "1438615474@qq.com",
+        # "2567159157@qq.com", #豪
+        # "jingying.zhao110@outlook.com",
+        # "2197359276@qq.com" #王梦华
     ]
 }

@@ -5,7 +5,7 @@ import os
 import logging
 from analyzer import MultiModelAnalyzer
 from sender import EmailSender
-from config import ACTIVE_MODEL
+from config import DEEPSEEK_CONFIG, OCR_ENABLED
 
 # 配置日志：同时输出到文件，方便后台调试
 logging.basicConfig(
@@ -18,10 +18,14 @@ logging.basicConfig(
 class ScreenShotMonitor:
     def __init__(self, folder_name="screenshots"):
         self.folder_name = folder_name
-        self.analyzer = MultiModelAnalyzer(provider=ACTIVE_MODEL)
+        self.analyzer = MultiModelAnalyzer()
         self.email_bot = EmailSender()
         self._ensure_dir()
-        logging.info(f"Prometheus 实例已初始化，当前模型: {ACTIVE_MODEL}")
+        logging.info(
+            "Prometheus 实例已初始化，当前模型: %s，OCR: %s",
+            DEEPSEEK_CONFIG["model"],
+            "开启" if OCR_ENABLED else "关闭",
+        )
 
     def _ensure_dir(self):
         if not os.path.exists(self.folder_name):
@@ -38,7 +42,7 @@ class ScreenShotMonitor:
 
             # AI 分析
             answer = self.analyzer.analyze_image(path)
-            logging.info(f"AI 分析完成，使用的供应商: {ACTIVE_MODEL}")
+            logging.info("AI 分析完成，使用的模型: %s", DEEPSEEK_CONFIG["model"])
 
             # 发送邮件
             email_content = f"时间: {now_str}\n\nAI 分析建议如下:\n\n{answer}"
